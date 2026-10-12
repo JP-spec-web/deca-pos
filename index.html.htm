@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>DECA Daily POS</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #060b1a; --panel: #0e1a38; --line: #1f315e; --blue: #1e90ff;
+      --text: #eaf2ff; --muted: #8ca2cc; --good: #3ddc97; --bad: #ff6b7a; --warn: #ff9f43;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html, body { margin: 0; }
+    body {
+      padding: max(16px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom));
+      background: var(--ink); color: var(--text);
+      font-family: 'Poppins', system-ui, -apple-system, 'Segoe UI', sans-serif; line-height: 1.45;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .wrap { max-width: 480px; margin: 0 auto; }
+    h1 { font-size: 1.5rem; margin: 4px 0 2px; line-height: 1.2; }
+    h2 { font-size: 1rem; margin: 0 0 10px; color: var(--muted); font-weight: 600; }
+    .sub { color: var(--muted); margin: 0 0 16px; font-size: .95rem; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+    label.field { display: block; font-size: .9rem; color: var(--muted); }
+    input, select {
+      width: 100%; margin: 4px 0 12px; padding: 14px; font: inherit; font-size: 1.1rem;
+      color: var(--text); background: var(--ink); border: 1px solid var(--line); border-radius: 10px;
+    }
+    input:focus-visible, select:focus-visible, button:focus-visible, .btn:focus-within { outline: 3px solid var(--blue); outline-offset: 2px; }
+    button, .btn {
+      display: block; width: 100%; padding: 14px 16px; font: inherit; font-weight: 600; font-size: 1.05rem; text-align: center;
+      color: #fff; background: var(--blue); border: 0; border-radius: 12px; cursor: pointer; user-select: none;
+    }
+    button.ghost, .btn.ghost { background: #1b2b52; }
+    button.small { width: auto; display: inline-block; padding: 8px 14px; font-size: .9rem; }
+    button:disabled { opacity: .35; cursor: not-allowed; }
+    .row { display: flex; gap: 10px; }
+    .row > * { flex: 1; }
+
+    #reader { width: 100%; margin-bottom: 12px; border-radius: 10px; overflow: hidden; background: #000; }
+    #lastTx { white-space: pre-line; }
+    .note { color: var(--muted); font-size: .88rem; margin: 6px 0 0; }
+    .msg { margin-top: 12px; padding: 10px 12px; border-radius: 10px; font-size: .95rem; }
+    .msg.ok { background: #0f3324; color: var(--good); }
+    .msg.bad { background: #3a1520; color: var(--bad); }
+    .msg.info { background: #14234a; color: var(--text); }
+
+    .student { font-size: 1.3rem; font-weight: 700; letter-spacing: .04em; }
+    .balance { font-size: 3.4rem; font-weight: 700; line-height: 1; color: var(--blue); margin: 6px 0 2px; }
+    .balance.free { color: var(--good); }
+
+    .items { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .item { min-height: 76px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px; background: #16316a; }
+    .item small { font-weight: 400; opacity: .85; font-size: .8rem; }
+    .redeem { margin-top: 12px; min-height: 76px; background: var(--warn); color: #1a1100; }
+    .redeem.selected { background: var(--good); color: #04180e; box-shadow: 0 0 0 3px #fff inset; }
+    .redeem small { display: block; font-weight: 400; font-size: .8rem; }
+
+    .cartline { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .cartline:last-child { border-bottom: 0; }
+    .qty { display: flex; align-items: center; gap: 10px; }
+    .qty button { width: 40px; padding: 6px 0; }
+    .qty b { min-width: 1.6em; text-align: center; }
+    .totals { margin-top: 10px; font-weight: 600; }
+    #submitBtn { min-height: 64px; font-size: 1.15rem; background: var(--good); color: #04180e; }
+    #scanBtn.attention { background: var(--good); color: #04180e; animation: pulse 1.4s ease-in-out 3; }
+    @keyframes pulse { 50% { transform: scale(1.03); } }
+    @media (prefers-reduced-motion: reduce) { #scanBtn.attention { animation: none; } }
+    .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- 1. Login -->
+  <section id="login" class="panel">
+    <h1>DECA Daily POS</h1>
+    <p class="sub">Volunteer login</p>
+    <label class="field" for="name">Your name</label>
+    <input id="name" type="text" autocomplete="off" maxlength="30">
+    <label class="field" for="pin">PIN</label>
+    <input id="pin" type="password" autocomplete="off">
+    <button id="loginBtn">Log in</button>
+    <div id="loginMsg" role="alert"></div>
+  </section>
+
+  <!-- 2. POS -->
+  <section id="pos" hidden>
+    <div class="topbar">
+      <div><strong id="who"></strong><div class="note" style="margin:0">Cashier</div></div>
+      <button id="logoutBtn" class="ghost small">Log out</button>
+    </div>
+
+    <div class="panel">
+      <h2>Student card</h2>
+      <div id="reader" hidden></div>
+      <div id="readerFile" hidden></div>
+      <div class="row">
+        <button id="scanBtn">Start Scanner</button>
+        <label class="btn ghost" for="photo">Scan from photo</label>
+        <input id="photo" type="file" accept="image/*" capture="environment" hidden>
+      </div>
+      <div id="scanMsg" role="status" aria-live="polite"></div>
+
+      <label class="field" for="student" style="margin-top:14px">Student number or teacher last name</label>
+      <div class="row">
+        <input id="student" type="text" autocomplete="off" placeholder="9 digits, or last name" maxlength="30">
+        <button id="lookupBtn" class="ghost" style="flex:0 0 38%;margin-bottom:12px">Look up</button>
+      </div>
+    </div>
+
+    <div class="panel" aria-live="polite">
+      <h2>Points</h2>
+      <div class="student" id="studentShown">&mdash;</div>
+      <div class="balance" id="balance">&mdash;</div>
+      <div class="note">points</div>
+      <div class="note" id="lastTx" style="margin-top:10px">Scan a card, or type a student number or teacher last name.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Add items</h2>
+      <div class="items" id="items"></div>
+      <button id="redeemBtn" class="redeem" disabled>REDEEM FREE ITEM (&minus;<span id="costText"></span> pts)<small id="redeemHint"></small></button>
+      <div id="freeWrap" hidden>
+        <label class="field" for="freeItem" style="margin-top:10px">Which free item?</label>
+        <select id="freeItem"></select>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>This transaction</h2>
+      <div id="cartLines"><div class="note">Nothing added yet.</div></div>
+      <div class="totals" id="totals"></div>
+    </div>
+
+    <button id="submitBtn" disabled>Submit Transaction</button>
+    <div id="msg" role="status" aria-live="polite"></div>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+  // ===== SET THIS: your Apps Script web app address (Deploy > Manage deployments, ends in /exec) =====
+  const API_URL = 'https://script.google.com/macros/s/AKfycbzD--Ho8heNW9_FCeNVsOl3N4v7tuB-jfeo-oKXJZVbNDFfZ4qQ7SzUmYlRTyHjNG8I/exec';
+  // ====================================================================================================
+
+  let ITEMS = {}, FREE_ITEMS = [], COST = 1000;   // loaded from the server, so prices live in one place (Code.gs)
+
+  const $ = id => document.getElementById(id);
+  // Talks to Apps Script. text/plain keeps this a "simple" request, so the browser needs no CORS pre-check.
+  async function run(fn, ...args) {
+    if (!API_URL || API_URL.indexOf('PASTE_') === 0) throw new Error('This page is not set up yet: put your web app address in API_URL.');
+    let res;
+    try {
+      res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fn: fn, args: args }), redirect: 'follow' });
+    } catch (e) {
+      throw new Error('Could not reach the server. Check your connection and that the web app is shared with "Anyone".');
+    }
+    let data;
+    try { data = await res.json(); } catch (e) { throw new Error('The server sent an unexpected reply. Check that the web app is shared with "Anyone".'); }
+    if (!data.ok) throw new Error(data.error || 'Something went wrong.');
+    return data.result;
+  }
+  const errText = e => ((e && e.message) ? String(e.message) : 'Something went wrong. Try again.').replace(/^(Error:\s*)+/, '');
+  const fmt = n => Number(n).toLocaleString();
+
+  // The PIN is only kept in memory and is sent with every call. The server checks it each time.
+  const state = { pin: '', name: '', student: '', typed: '', balance: null, recent: [], isNew: false, cart: {}, redeem: false, busy: false };
+  let scanner = null, scanning = false, lastBadScan = 0, lookupToken = 0, msgTimer = null;
+
+  function say(el, text, kind) {
+    el.innerHTML = '';
+    if (!text) return;
+    const d = document.createElement('div');
+    d.className = 'msg ' + (kind || 'info');
+    d.textContent = text;
+    el.appendChild(d);
+  }
+
+  /* ---------- login ---------- */
+  try { $('name').value = localStorage.getItem('deca-pos-name') || ''; } catch (e) { /* storage can be blocked */ }
+
+  async function doLogin() {
+    const name = $('name').value.trim(), pin = $('pin').value;
+    if (!name || !pin) return say($('loginMsg'), 'Enter your name and the PIN.', 'bad');
+    $('loginBtn').disabled = true;
+    try {
+      const r = await run('posLogin', name, pin);
+      await ensureMenu();
+      state.pin = pin; state.name = r.name;
+      try { localStorage.setItem('deca-pos-name', r.name); } catch (e) { /* ignore */ }
+      $('pin').value = '';
+      say($('loginMsg'), '');
+      $('login').hidden = true;
+      $('pos').hidden = false;
+      $('who').textContent = r.name;
+      renderAll();
+    } catch (e) {
+      say($('loginMsg'), errText(e), 'bad');
+    } finally {
+      $('loginBtn').disabled = false;
+    }
+  }
+  $('loginBtn').addEventListener('click', doLogin);
+  $('pin').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+  async function logout() {
+    await stopScanner();
+    resetTransaction();
+    state.pin = ''; state.name = '';
+    $('pos').hidden = true;
+    $('login').hidden = false;
+  }
+  $('logoutBtn').addEventListener('click', logout);
+
+  /* ---------- scanner ---------- */
+  function formats() {
+    const F = window.Html5QrcodeSupportedFormats;
+    return F ? [F.CODE_128, F.CODE_39, F.CODE_93, F.EAN_13, F.EAN_8, F.ITF, F.CODABAR, F.UPC_A, F.QR_CODE, F.DATA_MATRIX].filter(Boolean) : undefined;
+  }
+
+  // Cards may encode extra characters (like *345096226*) or separators. Find the 9-digit student number.
+  function extractStudent(text) {
+    const compact = String(text || '').replace(/[\s.\-]/g, '');
+    if (/^\d{9}$/.test(compact)) return compact;
+    const groups = compact.match(/\d+/g) || [];
+    return groups.find(g => g.length === 9) || '';
+  }
+
+  function setScanButton(label, attention) {
+    $('scanBtn').textContent = label;
+    $('scanBtn').classList.toggle('attention', !!attention);
+  }
+
+  async function startScanner() {
+    if (scanning) return;
+    say($('scanMsg'), '');
+    if (!window.Html5Qrcode) {
+      return say($('scanMsg'), 'The scanner did not load. Type the number, or use Scan from photo.', 'bad');
+    }
+    $('reader').hidden = false;
+    try {
+      scanner = scanner || new Html5Qrcode('reader', { formatsToSupport: formats(), experimentalFeatures: { useBarCodeDetectorIfSupported: true }, verbose: false });
+      await scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 280, height: 110 } }, onScan, () => {});
+      scanning = true;
+      setScanButton('Stop Scanner', false);
+    } catch (e) {
+      $('reader').hidden = true;
+      const why = String((e && (e.name || e.message)) || e).slice(0, 60);
+      say($('scanMsg'), 'Could not open the camera (' + why + '). Google blocks the camera on pages hosted inside Apps Script. Use Scan from photo or type the number, or use the camera version of this page.', 'bad');
+    }
+  }
+
+  async function stopScanner() {
+    const was = scanning;
+    scanning = false;
+    if (scanner && was) {
+      try { await scanner.stop(); scanner.clear(); } catch (e) { /* already stopped */ }
+    }
+    $('reader').hidden = true;
+    setScanButton('Start Scanner', false);
+  }
+
+  function onScan(text) {
+    if (!scanning) return;                       // a scan was already handled
+    const id = extractStudent(text);
+    if (!id) {
+      const now = Date.now();
+      if (now - lastBadScan > 2000) {            // do not flood the screen with the same message
+        lastBadScan = now;
+        say($('scanMsg'), 'That barcode is not a 9-digit student number. Try again or type it.', 'bad');
+      }
+      return;
+    }
+    stopScanner().then(() => useStudent(id));    // stop the camera, then fill the field and look the student up
+  }
+
+  $('scanBtn').addEventListener('click', () => { if (scanning) stopScanner(); else startScanner(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stopScanner(); });
+
+  // Reads a barcode from a photo. Chrome on Android can find one anywhere in a full-size photo, so try that first.
+  async function decodeFile(file) {
+    if (window.BarcodeDetector && window.createImageBitmap) {
+      try {
+        const det = new window.BarcodeDetector({ formats: ['code_128', 'code_39', 'code_93', 'ean_13', 'ean_8', 'itf', 'codabar', 'upc_a', 'qr_code', 'data_matrix'] });
+        const bmp = await window.createImageBitmap(file);
+        const found = await det.detect(bmp);
+        if (bmp.close) bmp.close();
+        const hit = (found || []).map(f => extractStudent(f.rawValue)).find(Boolean);
+        if (hit) return hit;
+      } catch (e) { /* fall through to the library */ }
+    }
+    const h = new Html5Qrcode('readerFile', { formatsToSupport: formats(), verbose: false });
+    const text = await h.scanFile(file, false);
+    try { h.clear(); } catch (e) { /* ignore */ }
+    return extractStudent(text);
+  }
+
+  // Works even when the live camera is blocked: take a photo of the barcode with the phone's camera app.
+  $('photo').addEventListener('change', async ev => {
+    const file = ev.target.files && ev.target.files[0];
+    ev.target.value = '';
+    if (!file) return;
+    if (!window.BarcodeDetector && !window.Html5Qrcode) return say($('scanMsg'), 'The scanner did not load. Type the number instead.', 'bad');
+    say($('scanMsg'), 'Reading the photo...', 'info');
+    try {
+      const id = await decodeFile(file);
+      if (id) { say($('scanMsg'), ''); useStudent(id); }
+      else say($('scanMsg'), 'That barcode is not a 9-digit student number.', 'bad');
+    } catch (e) {
+      say($('scanMsg'), 'Could not read a barcode in that photo. Try again closer and in good light, or type the number.', 'bad');
+    }
+  });
+
+  /* ---------- student lookup ---------- */
+  function resetTransaction() {
+    state.student = ''; state.typed = ''; state.balance = null; state.recent = []; state.isNew = false;
+    state.cart = {}; state.redeem = false;
+    lookupToken++;
+    $('student').value = '';
+    renderAll();
+  }
+
+  function useStudent(id) {
+    $('student').value = id;
+    lookup();
+  }
+
+  async function lookup() {
+    const raw = $('student').value.trim();
+    const scanned = extractStudent(raw);           // a 9-digit number, even if the barcode had extra characters
+    const query = scanned || raw;                  // otherwise treat it as a teacher's name
+    if (!query) return say($('scanMsg'), 'Enter a student number or a teacher last name.', 'bad');
+    if (!scanned && /\d/.test(raw)) return say($('scanMsg'), 'A student number has exactly 9 digits.', 'bad');
+    say($('scanMsg'), '');
+    say($('msg'), '');
+    state.student = query; state.typed = query; state.balance = null; state.recent = []; state.cart = {}; state.redeem = false;
+    $('student').value = query;
+    renderAll();
+    const token = ++lookupToken;
+    try {
+      const r = await run('posLookup', state.pin, query);
+      if (token !== lookupToken) return;          // a newer lookup replaced this one
+      state.student = r.label;                    // the name or number exactly as the server knows it
+      state.balance = r.balance; state.recent = r.recent || []; state.isNew = !!r.isNew;
+    } catch (e) {
+      if (token !== lookupToken) return;
+      say($('msg'), errText(e), 'bad');
+    }
+    renderAll();
+  }
+  $('lookupBtn').addEventListener('click', lookup);
+  $('student').addEventListener('keydown', e => { if (e.key === 'Enter') lookup(); });
+  $('student').addEventListener('input', () => {   // typing a different number invalidates the loaded balance
+    if ($('student').value.trim() !== state.typed) {
+      state.student = ''; state.typed = ''; state.balance = null; state.recent = []; state.redeem = false; lookupToken++;
+      renderAll();
+    }
+  });
+
+  /* ---------- items and cart ---------- */
+  let menuReady = false;
+  async function ensureMenu() {
+    if (menuReady) return;
+    const cfg = await run('posConfig');
+    ITEMS = cfg.items; FREE_ITEMS = cfg.freeItems; COST = cfg.cost;
+    $('items').innerHTML = ''; $('freeItem').innerHTML = '';
+    Object.keys(ITEMS).forEach(name => {
+      const b = document.createElement('button');
+      b.className = 'item';
+      b.dataset.name = name;
+      b.innerHTML = '<span></span><small></small>';
+      b.firstChild.textContent = name + ' ($' + ITEMS[name].price.toFixed(2) + ')';
+      b.lastChild.textContent = '+' + ITEMS[name].points + ' pts';
+      $('items').appendChild(b);
+    });
+    FREE_ITEMS.forEach(n => { const o = document.createElement('option'); o.value = o.textContent = n; $('freeItem').appendChild(o); });
+    $('costText').textContent = fmt(COST);
+    menuReady = true;
+  }
+
+  $('items').addEventListener('click', ev => {
+    const b = ev.target.closest('button.item');
+    if (!b) return;
+    state.cart[b.dataset.name] = Math.min(20, (state.cart[b.dataset.name] || 0) + 1);
+    renderAll();
+  });
+
+  $('cartLines').addEventListener('click', ev => {
+    const b = ev.target.closest('button[data-act]');
+    if (!b) return;
+    const n = b.dataset.name;
+    state.cart[n] = Math.max(0, Math.min(20, (state.cart[n] || 0) + (b.dataset.act === '+' ? 1 : -1)));
+    if (!state.cart[n]) delete state.cart[n];
+    renderAll();
+  });
+
+  $('redeemBtn').addEventListener('click', () => {
+    if (state.balance === null || state.balance < COST) return;   // guarded again here, not only by the disabled look
+    state.redeem = !state.redeem;
+    renderAll();
+  });
+  $('freeItem').addEventListener('change', renderAll);
+
+  const earnedNow = () => Object.keys(state.cart).reduce((s, n) => s + state.cart[n] * (ITEMS[n] ? ITEMS[n].points : 0), 0);
+  const canSubmit = () => !state.busy && state.balance !== null && !!state.student && (earnedNow() > 0 || state.redeem);
+
+  /* ---------- drawing ---------- */
+  function renderAll() {
+    const loaded = state.balance !== null;
+    $('studentShown').textContent = state.student || '\u2014';
+    $('balance').textContent = loaded ? fmt(state.balance) : '\u2014';
+    $('balance').classList.toggle('free', loaded && state.balance >= COST);
+
+    if (!state.student) $('lastTx').textContent = 'Scan a card, or type a student number or teacher last name.';
+    else if (!loaded) $('lastTx').textContent = 'Looking up...';
+    else if (state.recent.length) {
+      $('lastTx').textContent = 'Recent:\n' + state.recent.map(r =>
+        (r.when ? r.when + ': ' : '') + r.what + ' (' + (r.points > 0 ? '+' : '\u2212') + fmt(Math.abs(r.points)) + ')').join('\n');
+    } else $('lastTx').textContent = state.student && state.isNew ? 'No purchases yet.' : 'No recent entries.';
+
+    // The redeem button is greyed out (disabled) unless the fetched balance is 1,000 or more.
+    const canRedeem = loaded && state.balance >= COST;
+    $('redeemBtn').disabled = !canRedeem;
+    if (!canRedeem) state.redeem = false;
+    $('redeemBtn').classList.toggle('selected', state.redeem);
+    $('redeemHint').textContent = !loaded ? 'Look up a student first'
+      : canRedeem ? (state.redeem ? 'Selected. Tap again to cancel.' : 'Tap to add a free item')
+      : 'Needs ' + fmt(COST - state.balance) + ' more points';
+    $('freeWrap').hidden = !state.redeem;
+
+    const lines = Object.keys(state.cart);
+    const cart = $('cartLines');
+    cart.innerHTML = '';
+    if (!lines.length && !state.redeem) {
+      cart.innerHTML = '<div class="note">Nothing added yet.</div>';
+    } else {
+      lines.forEach(n => {
+        const row = document.createElement('div');
+        row.className = 'cartline';
+        const label = document.createElement('span');
+        label.textContent = n + ' (+' + fmt(state.cart[n] * ITEMS[n].points) + ')';
+        const qty = document.createElement('div');
+        qty.className = 'qty';
+        qty.innerHTML = '<button class="ghost" data-act="-" aria-label="Remove one"></button><b></b><button class="ghost" data-act="+" aria-label="Add one"></button>';
+        qty.children[0].textContent = '\u2212'; qty.children[1].textContent = state.cart[n]; qty.children[2].textContent = '+';
+        qty.children[0].dataset.name = qty.children[2].dataset.name = n;
+        row.appendChild(label); row.appendChild(qty);
+        cart.appendChild(row);
+      });
+      if (state.redeem) {
+        const row = document.createElement('div');
+        row.className = 'cartline';
+        row.textContent = 'FREE ITEM: ' + $('freeItem').value + ' (\u2212' + fmt(COST) + ')';
+        cart.appendChild(row);
+      }
+    }
+
+    const earned = earnedNow();
+    if (loaded && (earned || state.redeem)) {
+      $('totals').textContent = 'Earns ' + fmt(earned) + (state.redeem ? ', redeems ' + fmt(COST) : '') +
+        '. New balance: ' + fmt(state.balance + earned - (state.redeem ? COST : 0)) + ' pts';
+    } else $('totals').textContent = '';
+
+    $('submitBtn').disabled = !canSubmit();
+    $('submitBtn').textContent = state.busy ? 'Saving...' : 'Submit Transaction';
+  }
+
+  /* ---------- submit ---------- */
+  async function submit() {
+    if (!canSubmit()) return;
+    state.busy = true;
+    renderAll();
+    const payload = { account: state.student, volunteer: state.name, cart: state.cart, redeem: state.redeem ? $('freeItem').value : '' };
+    try {
+      const r = await run('posSubmit', state.pin, payload);
+      state.busy = false;
+      resetTransaction();                                    // clear the student, balance and cart
+      setScanButton('Scan Next', true);                      // ready for the next student in line
+      say($('msg'), 'Saved. ' + r.label + ' now has ' + fmt(r.balance) + ' points.', 'ok');
+      clearTimeout(msgTimer);
+      msgTimer = setTimeout(() => say($('msg'), ''), 6000);
+    } catch (e) {
+      state.busy = false;
+      say($('msg'), errText(e), 'bad');                      // keep the cart so nothing has to be re-entered
+      renderAll();
+    }
+  }
+  $('submitBtn').addEventListener('click', submit);
+
+  renderAll();
+</script>
+</body>
+</html>
