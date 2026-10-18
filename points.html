@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DECA Daily Rewards</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #060b1a;
+      --panel: #0e1a38;
+      --line: #1f315e;
+      --blue: #1e90ff;
+      --text: #eaf2ff;
+      --muted: #8ca2cc;
+      --good: #3ddc97;
+      --bad: #ff6b7a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 20px 16px 40px;
+      background: var(--ink); color: var(--text);
+      font-family: 'Poppins', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      line-height: 1.5;
+    }
+    .wrap { max-width: 440px; margin: 0 auto; }
+    h1 { font-size: 1.5rem; line-height: 1.2; margin: 4px 0 4px; }
+    h2 { font-size: 1.05rem; margin: 0 0 10px; }
+    .sub { color: var(--muted); margin: 0 0 18px; font-size: .95rem; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+    label { display: block; font-size: .9rem; color: var(--muted); }
+    input {
+      width: 100%; margin: 4px 0 12px; padding: 12px; font: inherit; font-size: 1.05rem;
+      color: var(--text); background: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+    }
+    input:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+    button {
+      width: 100%; padding: 12px 16px; font: inherit; font-weight: 600; color: #fff;
+      background: var(--blue); border: 0; border-radius: 8px; cursor: pointer;
+    }
+    button:disabled { opacity: .4; cursor: not-allowed; }
+    .note { color: var(--muted); font-size: .88rem; margin: 6px 0 0; }
+
+    /* The one memorable element: a meter with a notch per dollar spent (100 points). */
+    .points { font-size: 3.2rem; font-weight: 700; line-height: 1; color: var(--blue); }
+    .meter { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; margin: 14px 0 6px; }
+    .meter span { height: 16px; border-radius: 3px; background: var(--ink); border: 1px solid var(--line); }
+    .meter span.on { background: var(--blue); border-color: var(--blue); }
+    .free { color: var(--good); font-weight: 600; margin: 8px 0 0; }
+
+    .msg { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: .95rem; background: #3a1520; color: var(--bad); }
+    .hist { display: flex; justify-content: space-between; color: var(--muted); font-size: .9rem; padding: 4px 0; }
+    .hist em { font-style: normal; color: var(--text); }
+    .hist b { color: var(--text); font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+    td { padding: 6px 0; border-bottom: 1px solid var(--line); }
+    td:last-child { text-align: right; font-weight: 600; }
+    @media (prefers-reduced-motion: no-preference) { .meter span { transition: background .3s; } }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>DECA Daily rewards</h1>
+  <p class="sub">Enter your student number, or your last name if you are a teacher, to see your points.</p>
+
+  <div class="panel">
+    <label for="sid">Student number or teacher last name</label>
+    <input id="sid" type="text" autocomplete="off" placeholder="9-digit number or teacher last name">
+    <p class="note" style="margin:-6px 0 12px">Teachers: type your last name. If another teacher shares it, add your first initial, like Smith J.</p>
+    <button id="checkBtn">See my points</button>
+    <div id="bal" aria-live="polite"></div>
+  </div>
+
+  <div class="panel">
+    <h2>How it works</h2>
+    <p class="note" style="margin-top:0" id="how"></p>
+  </div>
+
+  <div class="panel">
+    <h2>Top 10</h2>
+    <table id="board"><tr><td>Loading...</td></tr></table>
+  </div>
+
+</div>
+
+<script>
+  // ===== SET THIS: your Apps Script web app address (Deploy > Manage deployments, ends in /exec) =====
+  const API_URL = 'https://script.google.com/macros/s/AKfycbzD--Ho8heNW9_FCeNVsOl3N4v7tuB-jfeo-oKXJZVbNDFfZ4qQ7SzUmYlRTyHjNG8I/exec';
+  // ====================================================================================================
+
+  let COST = 1000;
+  const $ = id => document.getElementById(id);
+  // Talks to Apps Script. text/plain keeps this a "simple" request, so the browser needs no CORS pre-check.
+  // No Google sign-in is involved, so this works for every browser and every Google account (or none).
+  async function run(fn, ...args) {
+    if (!API_URL || API_URL.indexOf('PASTE_') === 0) throw new Error('This page is not set up yet: put your web app address in API_URL.');
+    let res;
+    try {
+      res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fn: fn, args: args }), redirect: 'follow' });
+    } catch (e) {
+      throw new Error('Could not reach the server. Check your connection and try again.');
+    }
+    let data;
+    try { data = await res.json(); } catch (e) { throw new Error('The server sent an unexpected reply. Try again in a moment.'); }
+    if (!data.ok) throw new Error(data.error || 'Something went wrong.');
+    return data.result;
+  }
+
+  const esc = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
+  // Items and free items come from the server, so prices live in one place (Code.gs).
+  let redeemables = [];
+  let earners = [];
+
+  function setHow() {
+    $('how').textContent = earners.length
+      ? 'Buying ' + earners.join(', ') + ' earns points. At 1,000 points, show your student card for a free ' + redeemables.join(', ') + '. Teachers earn points too: enter your last name above.'
+      : 'Buying items earns points. At 1,000 points, show your student card for a free item. Teachers earn points too: enter your last name above.';
+  }
+  setHow();
+  run('posConfig').then(cfg => {
+    COST = cfg.cost; redeemables = cfg.freeItems; earners = cfg.order || Object.keys(cfg.items);
+    setHow();
+  }).catch(() => { /* the generic text above is fine */ });
+
+  function meter(points) {
+    const filled = Math.floor((Math.max(0, points) % COST) / 100);
+    return '<div class="meter" aria-hidden="true">' +
+      Array.from({ length: 10 }, (_, i) => '<span class="' + (i < filled ? 'on' : '') + '"></span>').join('') +
+      '</div>';
+  }
+
+  function renderBalance(b) {
+    if (!b.found) {
+      if (b.ambiguous) return '<p class="msg">More than one teacher matches that name. Add your first initial, like Smith J.</p>';
+      return '<p class="msg">No points on file yet. Buy ' + (earners.length ? earners.join(', ') : 'a snack') + ' to start earning. New purchases can take a minute to show up.</p>';
+    }
+    const free = b.free
+      ? '<p class="free">' + b.free + ' free item' + (b.free > 1 ? 's' : '') + ' ready: ' + redeemables.join(', ') + '.</p>'
+      : '';
+    const hist = b.recent.map(r =>
+      '<div class="hist"><span>' + (r.when ? esc(r.when) + ', ' : '') + '<em>' + esc(r.what) + '</em></span><b>' + (r.points > 0 ? '+' : '') + r.points + '</b></div>'
+    ).join('');
+    return '<div style="margin-top:16px"><div class="points">' + b.points.toLocaleString() + '</div>' +
+      '<div class="note" style="margin-top:2px">points</div>' + meter(b.points) +
+      '<p class="note">' + b.toNext + ' more points until your next free item.</p>' + free +
+      '<div style="margin-top:12px">' + hist + '</div></div>';
+  }
+
+  let busy = false;
+  async function checkBalance() {
+    if (busy) return;   // Enter key bypasses the disabled button
+    busy = true;
+    const btn = $('checkBtn');
+    btn.disabled = true;
+    try {
+      const b = await run('pointsLookup', $('sid').value);
+      $('bal').innerHTML = renderBalance(b);
+    } catch (e) {
+      $('bal').innerHTML = '<p class="msg"></p>';
+      $('bal').firstChild.textContent = (e && e.message) || 'Something went wrong. Try again.';
+    } finally {
+      busy = false;
+      btn.disabled = false;
+    }
+  }
+
+  $('sid').addEventListener('keydown', e => { if (e.key === 'Enter') checkBalance(); });
+  $('checkBtn').addEventListener('click', checkBalance);
+
+  run('pointsTop10').then(rows => {
+    $('board').innerHTML = rows.length
+      ? rows.map(r => '<tr><td>' + r.rank + '. ' + esc(r.who) + '</td><td>' + r.points.toLocaleString() + '</td></tr>').join('')
+      : '<tr><td>No points yet. Be the first.</td></tr>';
+  }).catch(() => { $('board').innerHTML = '<tr><td>Leaderboard unavailable right now.</td></tr>'; });
+</script>
+</body>
+</html>
